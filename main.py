@@ -23,6 +23,9 @@ food_img = pygame.transform.scale(food_img, (CELL_SIZE, CELL_SIZE))
 # Font điểm số
 score = 0
 font = pygame.font.SysFont(None, 36)
+title_font = pygame.font.SysFont(None, 60)
+menu_font = pygame.font.SysFont(None, 40)
+
 def draw_score(display, score):
     text = font.render(f"Score: {score}", True, (0, 0, 0))
     display.blit(text, (10, 10))
@@ -103,15 +106,11 @@ class SNAKE:
         else:
             self.new_block = False
 
-# Tạo mồi
-
 def generate_food(snake_body):
     while True:
         pos = Vector2(random.randint(0, GRID_SIZE - 1), random.randint(0, GRID_SIZE - 1))
-        if pos not in snake_body:
+        if tuple(pos) not in set(tuple(b) for b in snake_body):
             return pos
-
-# A* thuật toán
 
 def astar(start, goal, snake_body):
     def heuristic(a, b):
@@ -141,77 +140,157 @@ def astar(start, goal, snake_body):
                     heapq.heappush(open_set, (f, neighbor))
                     came_from[neighbor] = current
     return []
-# Tránh va chạm - bước đi an toàn
+
 def get_safe_move(head, body_set):
     for d in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
         next_pos = (head[0] + d[0], head[1] + d[1])
-        if (
-            0 <= next_pos[0] < GRID_SIZE and
-            0 <= next_pos[1] < GRID_SIZE and
-            next_pos not in body_set
-        ):
+        if (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE and next_pos not in body_set):
             return next_pos
     return None
 
-# Khởi tạo game
-snake = SNAKE()
-food = generate_food(snake.body)
-running = True
+# === Chế độ chọn ===
+mode = None
 
-# Vòng lặp chính
-while running:
-    clock.tick(8)
+def show_start_screen():
     display.fill(BG_COLOR)
-
-    for i in range(GRID_SIZE + 1):
-        pygame.draw.line(display, WHITE, (0, CELL_SIZE * i), (WIDTH, CELL_SIZE * i))
-        pygame.draw.line(display, WHITE, (CELL_SIZE * i, 0), (CELL_SIZE * i, HEIGHT))
-
-    head = tuple(snake.body[0])
-    body_set = set(tuple(part) for part in snake.body)
-    tail = tuple(snake.body[-1])
-
-    # Chiến lược thông minh
-    path_to_food = astar(head, tuple(food), body_set)
-
-    if path_to_food:
-        future_body = [Vector2(p) for p in path_to_food] + snake.body[:-1]
-        future_body_set = set(tuple(part) for part in future_body)
-        path_to_tail = astar(tuple(future_body[0]), tail, future_body_set)
-
-        if path_to_tail or food == snake.body[-1]:
-            new_head = path_to_food[0]
-        else:
-            path_to_tail = astar(head, tail, body_set)
-            if path_to_tail:
-                new_head = path_to_tail[0]
-            else:
-                new_head = get_safe_move(head, body_set)
-    else:
-        path_to_tail = astar(head, tail, body_set)
-        if path_to_tail:
-            new_head = path_to_tail[0]
-        else:
-            new_head = get_safe_move(head, body_set)
-
-    if new_head:
-        if Vector2(new_head) == food:
-            snake.new_block = True
-            food = generate_food(snake.body)
-            score += 1
-        snake.move(Vector2(new_head))
-    else:
-        print("Không tìm được đường an toàn!")
-        running = False
-
-    snake.draw_snake()
-    display.blit(food_img, (int(food.x * CELL_SIZE), int(food.y * CELL_SIZE)))
-    draw_score(display, score)
-
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-
+    title = title_font.render("SNAKE A* GAME", True, (0, 100, 0))
+    player_text = menu_font.render("Press 1 to play manually", True, (0, 0, 0))
+    bot_text = menu_font.render("Press 2 to let the bot play", True, (0, 0, 0))
+    display.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 2 - 100))
+    display.blit(player_text, (WIDTH // 2 - player_text.get_width() // 2, HEIGHT // 2))
+    display.blit(bot_text, (WIDTH // 2 - bot_text.get_width() // 2, HEIGHT // 2 + 50))
     pygame.display.flip()
 
-pygame.quit()
+def show_end_screen():
+    display.fill(BG_COLOR)
+    end_text = title_font.render("END", True, (200, 0, 0))
+    prompt = menu_font.render("Press Q to Quit or R to Reset", True, (0, 0, 0))
+    display.blit(end_text, (WIDTH // 2 - end_text.get_width() // 2, HEIGHT // 2 - 40))
+    display.blit(prompt, (WIDTH // 2 - prompt.get_width() // 2, HEIGHT // 2 + 20))
+    pygame.display.flip()
+
+
+#----------------------------------------------------------------------------------------------
+#Phần chơi chính 
+
+while True:
+    mode = None
+    snake = SNAKE()
+    food = generate_food(snake.body)
+    score = 0
+
+    while mode is None:
+        show_start_screen()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_1:
+                    mode = 'player'
+                elif event.key == pygame.K_2:
+                    mode = 'bot'
+
+    direction = Vector2(1, 0)
+    pending_direction = direction
+    running = True
+    game_over = False
+
+    # For bot mode, keep track of direction
+    if mode == 'bot':
+        # Initialize direction from initial snake body
+        direction = snake.body[0] - snake.body[1]
+        if direction.length_squared() == 0:
+            direction = Vector2(1, 0)
+
+    while running:
+        clock.tick(8)
+        display.fill(BG_COLOR)
+
+        for i in range(GRID_SIZE + 1):
+            pygame.draw.line(display, WHITE, (0, CELL_SIZE * i), (WIDTH, CELL_SIZE * i))
+            pygame.draw.line(display, WHITE, (CELL_SIZE * i, 0), (CELL_SIZE * i, HEIGHT))
+
+        head = tuple(snake.body[0])
+        body_set = set(tuple(part) for part in snake.body)
+        tail = tuple(snake.body[-1])
+
+        new_head = None
+
+        if mode == 'bot':
+            path_to_food = astar(head, tuple(food), body_set)
+            if path_to_food:
+                new_head = path_to_food[0]
+                direction = Vector2(new_head) - snake.body[0]
+            else:
+                safe_move = get_safe_move(head, body_set)
+                if safe_move:
+                    new_head = Vector2(safe_move)  # <-- Fix here: convert tuple to Vector2
+                    direction = Vector2(new_head) - snake.body[0]
+                else:
+                    # No safe move, move forward anyway causing collision
+                    new_head = snake.body[0] + direction
+
+        else:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP and direction != Vector2(0, 1):
+                        pending_direction = Vector2(0, -1)
+                    elif event.key == pygame.K_DOWN and direction != Vector2(0, -1):
+                        pending_direction = Vector2(0, 1)
+                    elif event.key == pygame.K_LEFT and direction != Vector2(1, 0):
+                        pending_direction = Vector2(-1, 0)
+                    elif event.key == pygame.K_RIGHT and direction != Vector2(-1, 0):
+                        pending_direction = Vector2(1, 0)
+
+            direction = pending_direction
+            new_head = snake.body[0] + direction
+            if not (0 <= new_head.x < GRID_SIZE and 0 <= new_head.y < GRID_SIZE) or tuple(new_head) in body_set:
+                game_over = True
+                running = False
+
+        if new_head:
+            if not (0 <= new_head.x < GRID_SIZE and 0 <= new_head.y < GRID_SIZE) or tuple(new_head) in body_set:
+                game_over = True
+                running = False
+            else:
+                if Vector2(new_head) == food:
+                    snake.new_block = True
+                    food = generate_food(snake.body)
+                    score += 1
+                snake.move(Vector2(new_head))
+                if len(snake.body) != len(set(tuple(b) for b in snake.body)):
+                    game_over = True
+                    running = False
+
+        snake.draw_snake()
+        display.blit(food_img, (int(food.x * CELL_SIZE), int(food.y * CELL_SIZE)))
+        draw_score(display, score)
+
+        if mode == 'bot':
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+        pygame.display.flip()
+
+    while game_over:
+        show_end_screen()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    pygame.quit()
+                    exit()
+                elif event.key == pygame.K_r:
+                    # Reset state to show start screen again
+                    running = False
+                    game_over = False
+                    mode = None
+
+
+
