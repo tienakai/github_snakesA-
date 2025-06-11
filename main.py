@@ -141,12 +141,24 @@ def astar(start, goal, snake_body):
                     heapq.heappush(open_set, (f, neighbor))
                     came_from[neighbor] = current
     return []
+# Tránh va chạm - bước đi an toàn
+def get_safe_move(head, body_set):
+    for d in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+        next_pos = (head[0] + d[0], head[1] + d[1])
+        if (
+            0 <= next_pos[0] < GRID_SIZE and
+            0 <= next_pos[1] < GRID_SIZE and
+            next_pos not in body_set
+        ):
+            return next_pos
+    return None
 
 # Khởi tạo game
 snake = SNAKE()
 food = generate_food(snake.body)
 running = True
 
+# Vòng lặp chính
 while running:
     clock.tick(8)
     display.fill(BG_COLOR)
@@ -155,17 +167,41 @@ while running:
         pygame.draw.line(display, WHITE, (0, CELL_SIZE * i), (WIDTH, CELL_SIZE * i))
         pygame.draw.line(display, WHITE, (CELL_SIZE * i, 0), (CELL_SIZE * i, HEIGHT))
 
-    path = astar(tuple(snake.body[0]), tuple(food), set(tuple(part) for part in snake.body))
+    head = tuple(snake.body[0])
+    body_set = set(tuple(part) for part in snake.body)
+    tail = tuple(snake.body[-1])
 
-    if path:
-        new_head = path[0]
-        if new_head == food:
+    # Chiến lược thông minh
+    path_to_food = astar(head, tuple(food), body_set)
+
+    if path_to_food:
+        future_body = [Vector2(p) for p in path_to_food] + snake.body[:-1]
+        future_body_set = set(tuple(part) for part in future_body)
+        path_to_tail = astar(tuple(future_body[0]), tail, future_body_set)
+
+        if path_to_tail or food == snake.body[-1]:
+            new_head = path_to_food[0]
+        else:
+            path_to_tail = astar(head, tail, body_set)
+            if path_to_tail:
+                new_head = path_to_tail[0]
+            else:
+                new_head = get_safe_move(head, body_set)
+    else:
+        path_to_tail = astar(head, tail, body_set)
+        if path_to_tail:
+            new_head = path_to_tail[0]
+        else:
+            new_head = get_safe_move(head, body_set)
+
+    if new_head:
+        if Vector2(new_head) == food:
             snake.new_block = True
             food = generate_food(snake.body)
             score += 1
-        snake.move(new_head)
+        snake.move(Vector2(new_head))
     else:
-        print("Không tìm được đường!")
+        print("Không tìm được đường an toàn!")
         running = False
 
     snake.draw_snake()
