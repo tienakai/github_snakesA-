@@ -4,7 +4,8 @@ import heapq
 from pygame.math import Vector2
 
 pygame.init()
-
+pygame.mixer.init()
+eat_sound = pygame.mixer.Sound(r"D:\pythonA_game\FileGame\sound\sfx_point.wav")
 # Cài đặt cửa sổ và màu
 WIDTH, HEIGHT = 700, 700
 CELL_SIZE = 35
@@ -15,6 +16,9 @@ pygame.display.set_caption("Snake A* Game")
 
 BG_COLOR = (175, 215, 70)
 WHITE = (255, 255, 255)
+
+#TỐC ĐỘ BAN ĐẦU 
+speed = 8
 
 # Load ảnh
 food_img = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\apple.png")
@@ -204,7 +208,7 @@ while True:
             direction = Vector2(1, 0)
 
     while running:
-        clock.tick(8)
+        clock.tick(speed)
         display.fill(BG_COLOR)
 
         for i in range(GRID_SIZE + 1):
@@ -260,6 +264,8 @@ while True:
                     snake.new_block = True
                     food = generate_food(snake.body)
                     score += 1
+                    eat_sound.play()
+                    speed += 0.5 
                 snake.move(Vector2(new_head))
                 if len(snake.body) != len(set(tuple(b) for b in snake.body)):
                     game_over = True
