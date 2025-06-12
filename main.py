@@ -20,6 +20,14 @@ WHITE = (255, 255, 255)
 #TỐC ĐỘ BAN ĐẦU 
 speed = 8
 
+# Load ảnh tạm dừng và tiếp tục
+is_paused = False
+pause_img = pygame.image.load(r"D:\pythonA_game\FileGame\assets\pause.png")
+pause_img = pygame.transform.scale(pause_img, (40, 40))
+play_img = pygame.image.load(r"D:\pythonA_game\FileGame\assets\play.png")
+play_img = pygame.transform.scale(play_img, (40, 40))
+pause_rect = pause_img.get_rect(topright=(WIDTH - 10, 10))
+
 # Load ảnh
 food_img = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\apple.png")
 food_img = pygame.transform.scale(food_img, (CELL_SIZE, CELL_SIZE))
@@ -146,11 +154,14 @@ def astar(start, goal, snake_body):
     return []
 
 def get_safe_move(head, body_set):
-    for d in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    random.shuffle(directions)  # Trộn ngẫu nhiên hướng đi
+    for d in directions:
         next_pos = (head[0] + d[0], head[1] + d[1])
         if (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE and next_pos not in body_set):
             return next_pos
     return None
+
 
 # === Chế độ chọn ===
 mode = None
@@ -179,6 +190,7 @@ def show_end_screen():
 
 while True:
     mode = None
+    speed = 8
     snake = SNAKE()
     food = generate_food(snake.body)
     score = 0
@@ -209,33 +221,34 @@ while True:
 
     while running:
         clock.tick(speed)
-        display.fill(BG_COLOR)
+        # Nếu đang pause, vẻ game và chờ nhấn play
+        if is_paused:
+            display.fill(BG_COLOR)
+            for i in range(GRID_SIZE + 1):
+                pygame.draw.line(display, WHITE, (0, CELL_SIZE * i), (WIDTH, CELL_SIZE * i))
+                pygame.draw.line(display, WHITE, (CELL_SIZE * i, 0), (CELL_SIZE * i, HEIGHT))
 
+            draw_score(display, score)
+            display.blit(food_img, (int(food.x * CELL_SIZE), int(food.y * CELL_SIZE)))
+            snake.draw_snake()
+            display.blit(play_img, pause_rect)  # Vẽ nút play
+            pygame.display.flip()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if pause_rect.collidepoint(event.pos):
+                        is_paused = False
+            continue
+
+        display.fill(BG_COLOR)
         for i in range(GRID_SIZE + 1):
             pygame.draw.line(display, WHITE, (0, CELL_SIZE * i), (WIDTH, CELL_SIZE * i))
             pygame.draw.line(display, WHITE, (CELL_SIZE * i, 0), (CELL_SIZE * i, HEIGHT))
 
-        head = tuple(snake.body[0])
-        body_set = set(tuple(part) for part in snake.body)
-        tail = tuple(snake.body[-1])
-
-        new_head = None
-
-        if mode == 'bot':
-            path_to_food = astar(head, tuple(food), body_set)
-            if path_to_food:
-                new_head = path_to_food[0]
-                direction = Vector2(new_head) - snake.body[0]
-            else:
-                safe_move = get_safe_move(head, body_set)
-                if safe_move:
-                    new_head = Vector2(safe_move)  # <-- Fix here: convert tuple to Vector2
-                    direction = Vector2(new_head) - snake.body[0]
-                else:
-                    # No safe move, move forward anyway causing collision
-                    new_head = snake.body[0] + direction
-
-        else:
+    # Xử lý điều khiển cho player mode
+        if mode == 'player':
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -248,7 +261,36 @@ while True:
                         pending_direction = Vector2(-1, 0)
                     elif event.key == pygame.K_RIGHT and direction != Vector2(-1, 0):
                         pending_direction = Vector2(1, 0)
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if pause_rect.collidepoint(event.pos):
+                        is_paused = True
 
+        elif mode == 'bot':
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if pause_rect.collidepoint(event.pos):
+                        is_paused = True
+
+    # Logic cập nhật game và di chuyển snake
+        head = tuple(snake.body[0])
+        body_set = set(tuple(part) for part in snake.body)
+        new_head = None
+
+        if mode == 'bot':
+            path_to_food = astar(head, tuple(food), body_set)
+            if path_to_food:
+                new_head = path_to_food[0]
+                direction = Vector2(new_head) - snake.body[0]
+            else:
+                safe_move = get_safe_move(head, body_set)
+                if safe_move:
+                    new_head = Vector2(safe_move)
+                    direction = Vector2(new_head) - snake.body[0]
+                else:
+                    new_head = snake.body[0] + direction
+        else:
             direction = pending_direction
             new_head = snake.body[0] + direction
             if not (0 <= new_head.x < GRID_SIZE and 0 <= new_head.y < GRID_SIZE) or tuple(new_head) in body_set:
@@ -265,7 +307,7 @@ while True:
                     food = generate_food(snake.body)
                     score += 1
                     eat_sound.play()
-                    speed += 0.5 
+                    speed += 0.5
                 snake.move(Vector2(new_head))
                 if len(snake.body) != len(set(tuple(b) for b in snake.body)):
                     game_over = True
@@ -274,13 +316,9 @@ while True:
         snake.draw_snake()
         display.blit(food_img, (int(food.x * CELL_SIZE), int(food.y * CELL_SIZE)))
         draw_score(display, score)
-
-        if mode == 'bot':
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-
+        display.blit(pause_img if not is_paused else play_img, pause_rect)
         pygame.display.flip()
+
 
     while game_over:
         show_end_screen()
