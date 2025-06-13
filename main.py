@@ -168,21 +168,70 @@ mode = None
 
 def show_start_screen():
     display.fill(BG_COLOR)
+
+    # Render title
     title = title_font.render("SNAKE A* GAME", True, (0, 100, 0))
-    player_text = menu_font.render("Press 1 to play manually", True, (0, 0, 0))
-    bot_text = menu_font.render("Press 2 to let the bot play", True, (0, 0, 0))
-    display.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 2 - 100))
-    display.blit(player_text, (WIDTH // 2 - player_text.get_width() // 2, HEIGHT // 2))
-    display.blit(bot_text, (WIDTH // 2 - bot_text.get_width() // 2, HEIGHT // 2 + 50))
+    title_pos = (WIDTH // 2 - title.get_width() // 2, HEIGHT // 2 - 100)
+    display.blit(title, title_pos)
+
+    # Load ảnh nền nút
+    button_img = pygame.image.load(r"D:\pythonA_game\kenney_ui-pack\PNG\Blue\Default\button_rectangle_depth_gradient.png")
+    button_img = pygame.transform.scale(button_img, (350, 50))  # kích thước nút
+
+    # Tạo text
+    player_text = menu_font.render("Press 1 to play manually", True, (255, 255, 255))
+    bot_text = menu_font.render("Press 2 to let the bot play", True, (255, 255, 255))
+
+    # Vị trí các nút
+    player_button_pos = (WIDTH // 2 - 150, HEIGHT // 2)
+    bot_button_pos = (WIDTH // 2 - 150, HEIGHT // 2 + 70)
+
+    # Hiển thị ảnh nút
+    display.blit(button_img, player_button_pos)
+    display.blit(button_img, bot_button_pos)
+
+    # Hiển thị text căn giữa trên nút
+    display.blit(player_text, (
+        player_button_pos[0] + (button_img.get_width() - player_text.get_width()) // 2,
+        player_button_pos[1] + (button_img.get_height() - player_text.get_height()) // 2
+    ))
+
+    display.blit(bot_text, (
+        bot_button_pos[0] + (button_img.get_width() - bot_text.get_width()) // 2,
+        bot_button_pos[1] + (button_img.get_height() - bot_text.get_height()) // 2
+    ))
+
     pygame.display.flip()
+
+
 
 def show_end_screen():
     display.fill(BG_COLOR)
+
+    # Tiêu đề END
     end_text = title_font.render("END", True, (200, 0, 0))
+    display.blit(end_text, (WIDTH // 2 - end_text.get_width() // 2, HEIGHT // 2 - 100))
+
+    # Load ảnh nền nút
+    end_button_img = pygame.image.load(r"D:\pythonA_game\kenney_ui-pack\PNG\Yellow\Default\button_rectangle_depth_gloss.png")
+    end_button_img = pygame.transform.scale(end_button_img, (450, 60))  # chỉnh chiều cao nhẹ
+
+    # Tạo chữ trên nút
     prompt = menu_font.render("Press Q to Quit or R to Reset", True, (0, 0, 0))
-    display.blit(end_text, (WIDTH // 2 - end_text.get_width() // 2, HEIGHT // 2 - 40))
-    display.blit(prompt, (WIDTH // 2 - prompt.get_width() // 2, HEIGHT // 2 + 20))
+
+    # Tính vị trí nút để căn giữa
+    button_pos = (WIDTH // 2 - end_button_img.get_width() // 2, HEIGHT // 2 + 20)
+    display.blit(end_button_img, button_pos)
+
+    # Vẽ chữ căn giữa trong ảnh nút
+    text_pos = (
+        button_pos[0] + (end_button_img.get_width() - prompt.get_width()) // 2,
+        button_pos[1] + (end_button_img.get_height() - prompt.get_height()) // 2
+    )
+    display.blit(prompt, text_pos)
+
     pygame.display.flip()
+
 
 
 #----------------------------------------------------------------------------------------------
