@@ -300,8 +300,13 @@ def show_start_screen():
 
 def show_end_screen():
     display.fill(BG_COLOR)
+    # Render "END" text
     end_text = title_font.render("END", True, (200, 0, 0))
     display.blit(end_text, (WIDTH // 2 - end_text.get_width() // 2, HEIGHT // 2 - 100))
+    # Render score
+    score_text = score_font.render(f"Score: {score}", True, (0, 0, 0))
+    display.blit(score_text, (WIDTH // 2 - score_text.get_width() // 2, HEIGHT // 2 - 50))
+    # Render prompt
     prompt = menu_font.render("Press Q to Quit or R to Reset", True, (0, 0, 0))
     button_pos = (WIDTH // 2 - end_button_img.get_width() // 2, HEIGHT // 2 + 20)
     display.blit(end_button_img, button_pos)
