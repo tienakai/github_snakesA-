@@ -2,7 +2,7 @@ import pygame
 import random
 import heapq
 from pygame.math import Vector2
-
+from collections import deque
 pygame.init()
 pygame.mixer.init()
 eat_sound = pygame.mixer.Sound(r"D:\pythonA_game\FileGame\sound\sfx_point.wav")
@@ -18,8 +18,7 @@ BG_COLOR = (175, 215, 70)
 WHITE = (255, 255, 255)
 
 #TỐC ĐỘ BAN ĐẦU 
-speed = 8
-
+speed = 5 # Chạy 5 khung hình mỗi giây
 # Load ảnh tạm dừng và tiếp tục
 is_paused = False
 pause_img = pygame.image.load(r"D:\pythonA_game\FileGame\assets\pause.png")
@@ -64,6 +63,11 @@ class SNAKE:
         self.body_tl = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\body_topleft.png").convert_alpha()
         self.body_br = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\body_bottomright.png").convert_alpha()
         self.body_bl = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\body_bottomleft.png").convert_alpha()
+
+
+         # ✅ Thêm mặc định tránh lỗi attribute
+        self.head = self.head_right  # hoặc head_up,...
+        self.tail = self.tail_right  # hoặc tail_up,...
 
     def update_graphics(self):
         self.update_head_graphics()
@@ -126,7 +130,11 @@ def generate_food(snake_body):
 
 def astar(start, goal, snake_body):
     def heuristic(a, b):
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])  # Manhattan distance
+
+    start = tuple(start)
+    goal = tuple(goal)
+    snake_body = set(snake_body)
 
     open_set = []
     heapq.heappush(open_set, (0, start))
@@ -144,23 +152,79 @@ def astar(start, goal, snake_body):
 
         for d in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
             neighbor = (current[0] + d[0], current[1] + d[1])
-            if (0 <= neighbor[0] < GRID_SIZE and 0 <= neighbor[1] < GRID_SIZE and neighbor not in snake_body):
+            if (0 <= neighbor[0] < GRID_SIZE and 0 <= neighbor[1] < GRID_SIZE
+                    and neighbor not in snake_body):
                 tentative_g = g_score[current] + 1
                 if tentative_g < g_score.get(neighbor, float('inf')):
                     g_score[neighbor] = tentative_g
                     f = tentative_g + heuristic(neighbor, goal)
                     heapq.heappush(open_set, (f, neighbor))
                     came_from[neighbor] = current
-    return []
 
-def get_safe_move(head, body_set):
+    return None  # không có đường đi
+
+
+def get_safe_move(head, body):
+    body_set = set(tuple(part) for part in body)
+    tail = tuple(body[-1])
+
+    # Bỏ đuôi tạm thời để kiểm tra đường đến đuôi (vì đuôi sẽ di chuyển)
+    body_set_without_tail = body_set - {tail}
+
+    # Nếu tìm được đường đến đuôi → ưu tiên đi tới đuôi
+    path_to_tail = astar(head, tail, body_set_without_tail)
+    if path_to_tail:
+        return path_to_tail[0]  # bước đầu tiên trên đường đến đuôi
+
+    # Nếu không đến được đuôi → dùng flood-fill để chọn hướng có vùng trống lớn nhất
     directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-    random.shuffle(directions)  # Trộn ngẫu nhiên hướng đi
+    max_area = -1
+    best_move = None
+
     for d in directions:
         next_pos = (head[0] + d[0], head[1] + d[1])
-        if (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE and next_pos not in body_set):
-            return next_pos
-    return None
+        if not (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE):
+            continue
+        if next_pos in body_set:
+            continue
+
+        visited = set()
+        queue = deque([next_pos])
+        visited.add(next_pos)
+
+        while queue:
+            current = queue.popleft()
+            for nd in directions:
+                neighbor = (current[0] + nd[0], current[1] + nd[1])
+                if (0 <= neighbor[0] < GRID_SIZE and 0 <= neighbor[1] < GRID_SIZE
+                        and neighbor not in body_set and neighbor not in visited):
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+
+        if len(visited) > max_area:
+            max_area = len(visited)
+            best_move = next_pos
+
+    return best_move
+def get_away_from_food(head, food, body):
+    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    max_distance = -1
+    best_move = None
+    body_set = set(body)
+
+    for d in directions:
+        next_pos = (head[0] + d[0], head[1] + d[1])
+        if not (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE):
+            continue
+        if next_pos in body_set:
+            continue
+
+        distance = abs(next_pos[0] - food[0]) + abs(next_pos[1] - food[1])
+        if distance > max_distance:
+            max_distance = distance
+            best_move = next_pos
+
+    return best_move
 
 
 # === Chế độ chọn ===
@@ -239,7 +303,7 @@ def show_end_screen():
 
 while True:
     mode = None
-    speed = 8
+    speed = 5
     snake = SNAKE()
     food = generate_food(snake.body)
     score = 0
@@ -314,7 +378,7 @@ while True:
                     if pause_rect.collidepoint(event.pos):
                         is_paused = True
 
-        elif mode == 'bot':
+        elif mode == 'bot': # Bot mode không cần xử lý phím bấm, chỉ cần kiểm tra pause
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -329,17 +393,26 @@ while True:
 
         if mode == 'bot':
             path_to_food = astar(head, tuple(food), body_set)
+            for step in path_to_food:
+             pygame.draw.rect(display, (100, 100, 255), (step[0] * CELL_SIZE, step[1] * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+
             if path_to_food:
                 new_head = path_to_food[0]
                 direction = Vector2(new_head) - snake.body[0]
+
             else:
-                safe_move = get_safe_move(head, body_set)
+                safe_move = get_safe_move(head, snake.body)
                 if safe_move:
                     new_head = Vector2(safe_move)
                     direction = Vector2(new_head) - snake.body[0]
                 else:
-                    new_head = snake.body[0] + direction
-        else:
+                    retreat = get_away_from_food(head, food, body_set)
+                    if retreat:
+                        new_head = Vector2(retreat)
+                        direction = new_head - snake.body[0]
+                    else:
+                        new_head = snake.body[0] + direction # Nếu không có đường đến thức ăn, di chuyển theo hướng hiện tại
+        else: # Player mode
             direction = pending_direction
             new_head = snake.body[0] + direction
             if not (0 <= new_head.x < GRID_SIZE and 0 <= new_head.y < GRID_SIZE) or tuple(new_head) in body_set:
