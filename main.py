@@ -15,10 +15,23 @@ CELL_SIZE = 35
 GRID_SIZE = WIDTH // CELL_SIZE 
 BG_COLOR = (175, 215, 70)
 WHITE = (255, 255, 255)
+OBSTACLE_COLOR = (100, 100, 100)  # [OBSTACLE] Màu xám cho chướng ngại vật
 INITIAL_SPEED = 5
 MAX_SPEED = 20
 DIRECTIONS = [Vector2(0, 1), Vector2(1, 0), Vector2(0, -1), Vector2(-1, 0)]  # Precomputed directions
 MAX_BFS_DEPTH = 300  # Increased BFS depth for better exploration
+
+# [OBSTACLE] Định nghĩa danh sách chướng ngại vật cố định
+# - Bao gồm (0, 0) và 5 vị trí khác để cản đường rắn
+# - Các vị trí được chọn để phân bố trên lưới, tránh trùng với thân rắn ban đầu
+OBSTACLES = [
+    Vector2(0, 0),   # Góc trên bên trái
+    Vector2(5, 5),   # Giữa lưới
+    Vector2(10, 5),  # Vị trí ngang giữa
+    Vector2(15, 15), # Góc gần dưới bên phải
+    Vector2(3, 3),   # Vị trí bổ sung
+    Vector2(7, 7)    # Vị trí bổ sung
+]
 
 # Set up display and clock
 display = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -160,14 +173,19 @@ class SNAKE:
         else:
             self.new_block = False
 
-def generate_food(snake_body):
+def generate_food(snake_body, obstacles):
+    # [OBSTACLE] Cập nhật hàm để tránh tạo thức ăn trên chướng ngại vật
+    # - Kiểm tra cả thân rắn và tập chướng ngại vật
     body_set = set(tuple(b) for b in snake_body)
+    obstacle_set = set(tuple(o) for o in obstacles)
     while True:
         pos = Vector2(random.randint(0, GRID_SIZE - 1), random.randint(0, GRID_SIZE - 1))
-        if tuple(pos) not in body_set:
+        if tuple(pos) not in body_set and tuple(pos) not in obstacle_set:
             return pos
 
-def astar(start, goal, snake_body):
+def astar(start, goal, snake_body, obstacles):
+    # [OBSTACLE] Cập nhật A* để tránh chướng ngại vật
+    # - Thêm kiểm tra neighbor không nằm trong obstacle_set
     cache_key = (tuple(start), tuple(goal), tuple(tuple(b) for b in snake_body))
     if path_cache[cache_key]:
         return path_cache[cache_key]
@@ -178,6 +196,7 @@ def astar(start, goal, snake_body):
     start = tuple(start)
     goal = tuple(goal)
     snake_body = set(tuple(b) for b in snake_body)
+    obstacle_set = set(tuple(o) for o in obstacles)  # [OBSTACLE] Tạo tập chướng ngại vật
     open_set = []
     heapq.heappush(open_set, (0, start))
     came_from = {}
@@ -195,7 +214,8 @@ def astar(start, goal, snake_body):
 
         for d in DIRECTIONS:
             neighbor = (current[0] + d.x, current[1] + d.y)
-            if (0 <= neighbor[0] < GRID_SIZE and 0 <= neighbor[1] < GRID_SIZE and neighbor not in snake_body):
+            if (0 <= neighbor[0] < GRID_SIZE and 0 <= neighbor[1] < GRID_SIZE and
+                neighbor not in snake_body and neighbor not in obstacle_set):  # [OBSTACLE] Kiểm tra chướng ngại vật
                 tentative_g = g_score[current] + 1
                 if tentative_g < g_score.get(neighbor, float('inf')):
                     g_score[neighbor] = tentative_g
@@ -206,46 +226,42 @@ def astar(start, goal, snake_body):
     path_cache[cache_key] = None
     return None
 
-def bfs_survival(head, body):
+def bfs_survival(head, body, obstacles):
+    # [OBSTACLE] Cập nhật BFS để tránh chướng ngại vật
+    # - Thêm kiểm tra next_pos và neighbor không nằm trong obstacle_set
     body_set = set(tuple(part) for part in body)
+    obstacle_set = set(tuple(o) for o in obstacles)  # [OBSTACLE] Tạo tập chướng ngại vật
     tail = tuple(body[-1])
     body_set_without_tail = body_set - {tail}
     max_safety_score = -float('inf')
     best_move = None
     valid_moves = []
 
-    # Check all possible moves
     for d in DIRECTIONS:
         next_pos = (head[0] + d.x, head[1] + d.y)
-        if (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE and next_pos not in body_set):
+        if (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE and
+            next_pos not in body_set and next_pos not in obstacle_set):  # [OBSTACLE] Kiểm tra chướng ngại vật
             valid_moves.append(next_pos)
 
-    # Special handling for top-left corner
     if len(valid_moves) > 0 and head[0] == 0 and head[1] == 0:
         print(f"Top-left corner detected at {head}, valid moves: {valid_moves}")
         for move in valid_moves:
-            # Check safety for next three moves
             next_next_pos = (move[0] + (move[0] - head[0]), move[1] + (move[1] - head[1]))
             safe = False
             if (0 <= next_next_pos[0] < GRID_SIZE and 0 <= next_next_pos[1] < GRID_SIZE and
-                next_next_pos not in body_set):
+                next_next_pos not in body_set and next_next_pos not in obstacle_set):  # [OBSTACLE]
                 for d2 in DIRECTIONS:
                     next_next_next_pos = (next_next_pos[0] + d2.x, next_next_pos[1] + d2.y)
                     if (0 <= next_next_next_pos[0] < GRID_SIZE and 0 <= next_next_next_pos[1] < GRID_SIZE and
-                        next_next_next_pos not in body_set):
+                        next_next_next_pos not in body_set and next_next_next_pos not in obstacle_set):  # [OBSTACLE]
                         safe = True
                         break
-            else:
-                safe = False
-
-            # Safety score: force right if possible, high penalty for unsafe
-            safety_score = 200 if move[0] > head[0] else 100  # Strong preference for right
-            safety_score += 100 if safe else -100  # High bonus for safety, penalty for unsafe
+            safety_score = 200 if move[0] > head[0] else 100
+            safety_score += 100 if safe else -100
             if safety_score > max_safety_score:
                 max_safety_score = safety_score
                 best_move = move
         if not best_move and valid_moves:
-            # Force move right if available, otherwise first valid
             for move in valid_moves:
                 if move[0] > head[0]:
                     best_move = move
@@ -255,7 +271,6 @@ def bfs_survival(head, body):
         print(f"Top-left move chosen: {best_move}, safety score: {max_safety_score}")
         return best_move
 
-    # General corner/edge handling
     if len(valid_moves) > 0 and (
         (head[0] == 0 or head[0] == GRID_SIZE-1) or
         (head[1] == 0 or head[1] == GRID_SIZE-1)
@@ -271,7 +286,6 @@ def bfs_survival(head, body):
         print(f"Corner move chosen: {best_move}")
         return best_move
 
-    # BFS with multi-step safety
     center = (GRID_SIZE // 2, GRID_SIZE // 2)
     for next_pos in valid_moves:
         visited = set([next_pos])
@@ -284,7 +298,8 @@ def bfs_survival(head, body):
             for nd in DIRECTIONS:
                 neighbor = (current[0] + nd.x, current[1] + nd.y)
                 if (0 <= neighbor[0] < GRID_SIZE and 0 <= neighbor[1] < GRID_SIZE
-                        and neighbor not in body_set_without_tail and neighbor not in visited):
+                        and neighbor not in body_set_without_tail and
+                        neighbor not in obstacle_set and neighbor not in visited):  # [OBSTACLE]
                     visited.add(neighbor)
                     queue.append(neighbor)
                     next_neighbors += 1
@@ -296,7 +311,7 @@ def bfs_survival(head, body):
         if not safe:
             continue
 
-        path_to_tail = astar(next_pos, tail, body_set_without_tail)
+        path_to_tail = astar(next_pos, tail, body_set_without_tail, obstacles)  # [OBSTACLE] Truyền obstacles
         safety_score = len(visited) * (1.5 if path_to_tail else 1.0) + abs(next_pos[0] - center[0]) + abs(next_pos[1] - center[1])
         if safety_score > max_safety_score:
             max_safety_score = safety_score
@@ -312,22 +327,24 @@ def bfs_survival(head, body):
         print(f"No survival move found, valid moves: {valid_moves}")
     return best_move
 
-def tail_chasing_fallback(head, body):
+def tail_chasing_fallback(head, body, obstacles):
+    # [OBSTACLE] Cập nhật tail chasing để tránh chướng ngại vật
     tail = tuple(body[-1])
     body_set_without_tail = set(tuple(part) for part in body) - {tail}
-    path_to_tail = astar(head, tail, body_set_without_tail)
+    obstacle_set = set(tuple(o) for o in obstacles)  # [OBSTACLE]
+    path_to_tail = astar(head, tail, body_set_without_tail, obstacles)  # [OBSTACLE] Truyền obstacles
     if path_to_tail:
         print(f"Tail-chasing move: {path_to_tail[0]}")
         return path_to_tail[0]
 
-    # Fallback: choose any valid move
     body_set = set(tuple(part) for part in body)
     valid_moves = [
         (head[0] + d.x, head[1] + d.y)
         for d in DIRECTIONS
         if (0 <= head[0] + d.x < GRID_SIZE and
             0 <= head[1] + d.y < GRID_SIZE and
-            (head[0] + d.x, head[1] + d.y) not in body_set)
+            (head[0] + d.x, head[1] + d.y) not in body_set and
+            (head[0] + d.x, head[1] + d.y) not in obstacle_set)  # [OBSTACLE]
     ]
     if valid_moves:
         move = random.choice(valid_moves)
@@ -343,17 +360,24 @@ def draw_score():
 def draw_pause_button():
     display.blit(play_img if is_paused else pause_img, pause_rect)
 
-def draw_game(snake, food, path_to_food=None):
+def draw_game(snake, food, obstacles, path_to_food=None):
+    # [OBSTACLE] Cập nhật hàm vẽ để hiển thị chướng ngại vật
+    # - Vẽ hình chữ nhật màu xám cho mỗi chướng ngại vật trước khi vẽ rắn và thức ăn
     display.fill(BG_COLOR)
     for i in range(GRID_SIZE + 1):
         pygame.draw.line(display, WHITE, (0, CELL_SIZE * i), (WIDTH, CELL_SIZE * i))
         pygame.draw.line(display, WHITE, (CELL_SIZE * i, 0), (CELL_SIZE * i, HEIGHT))
+    # [OBSTACLE] Vẽ chướng ngại vật
+    for obstacle in obstacles:
+        x = int(obstacle.x * CELL_SIZE)
+        y = int(obstacle.y * CELL_SIZE)
+        pygame.draw.rect(display, OBSTACLE_COLOR, pygame.Rect(x, y, CELL_SIZE, CELL_SIZE))
     if path_to_food and mode == 'bot':
         for step in path_to_food:
             pygame.draw.rect(display, (255, 255, 0), (step[0] * CELL_SIZE, step[1] * CELL_SIZE, CELL_SIZE, CELL_SIZE))
     display.blit(food_img, (int(food.x * CELL_SIZE), int(food.y * CELL_SIZE)))
     snake.draw_snake()
-#   draw_score()
+    # draw_score()  # Bỏ chú thích để hiển thị điểm số
     draw_pause_button()
 
 def show_start_screen():
@@ -396,10 +420,11 @@ while True:
     mode = None
     speed = INITIAL_SPEED
     snake = SNAKE()
-    food = generate_food(snake.body)
+    obstacles = OBSTACLES  # [OBSTACLE] Khởi tạo danh sách chướng ngại vật
+    food = generate_food(snake.body, obstacles)  # [OBSTACLE] Truyền obstacles
     score = 0
     path_cache.clear()
-    pygame.display.set_caption(f"Snake A* Game - Score: {score}")  # Initialize title with score
+    pygame.display.set_caption(f"Snake A* Game - Score: {score}")
 
     while mode is None:
         show_start_screen()
@@ -426,7 +451,7 @@ while True:
     while running:
         clock.tick(speed)
         if is_paused:
-            draw_game(snake, food)
+            draw_game(snake, food, obstacles)  # [OBSTACLE] Truyền obstacles
             pygame.display.flip()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -449,9 +474,9 @@ while True:
                         pending_direction = Vector2(-1, 0)
                     elif event.key == pygame.K_RIGHT and direction != Vector2(-1, 0):
                         pending_direction = Vector2(1, 0)
-                    elif event.type == pygame.MOUSEBUTTONDOWN:
-                        if pause_rect.collidepoint(event.pos):
-                         is_paused = True
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if pause_rect.collidepoint(event.pos):
+                        is_paused = True
         else:  # Bot mode
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -466,48 +491,50 @@ while True:
         path_to_food = None
 
         if mode == 'bot':
-            path_to_food = astar(head, tuple(food), snake.body)
+            path_to_food = astar(head, tuple(food), snake.body, obstacles)  # [OBSTACLE] Truyền obstacles
             if path_to_food:
                 new_head = path_to_food[0]
                 direction = Vector2(new_head) - snake.body[0]
             else:
-                safe_move = bfs_survival(head, snake.body)
+                safe_move = bfs_survival(head, snake.body, obstacles)  # [OBSTACLE] Truyền obstacles
                 if safe_move:
                     new_head = Vector2(safe_move)
                     direction = Vector2(new_head) - snake.body[0]
                 else:
-                    tail_move = tail_chasing_fallback(head, snake.body)
+                    tail_move = tail_chasing_fallback(head, snake.body, obstacles)  # [OBSTACLE] Truyền obstacles
                     if tail_move:
                         new_head = Vector2(tail_move)
                         direction = Vector2(new_head) - snake.body[0]
                     else:
                         game_over = True
                         running = False
-
         else:
             direction = pending_direction
             new_head = snake.body[0] + direction
 
         if new_head:
+            obstacle_set = set(tuple(o) for o in obstacles)  # [OBSTACLE] Tạo tập chướng ngại vật để kiểm tra va chạm
             if (new_head.x < 0 or new_head.x >= GRID_SIZE or new_head.y < 0 or new_head.y >= GRID_SIZE or
-                new_head in snake.body[1:]):
+                new_head in snake.body[1:] or tuple(new_head) in obstacle_set):  # [OBSTACLE] Kiểm tra va chạm với chướng ngại vật
+                print(f"Game over: new_head = {new_head}, body = {snake.body[1:]}, obstacles = {obstacles}")  # [OBSTACLE] Debug va chạm
                 game_over = True
                 running = False
             else:
                 if Vector2(new_head) == food:
                     snake.new_block = True
-                    food = generate_food(snake.body)
+                    food = generate_food(snake.body, obstacles)  # [OBSTACLE] Truyền obstacles
                     score += 1
                     eat_sound.play()
                     speed = min(speed + 0.5, MAX_SPEED)
                     path_cache.clear()
-                    pygame.display.set_caption(f"Snake A* Game - Score: {score}")  # Update title with new score
+                    pygame.display.set_caption(f"Snake A* Game - Score: {score}")
                 snake.move(Vector2(new_head))
                 if len(snake.body) != len(set(tuple(b) for b in snake.body)):
+                    print(f"Game over: duplicate body positions detected, body = {snake.body}")
                     game_over = True
                     running = False
 
-        draw_game(snake, food, path_to_food)
+        draw_game(snake, food, obstacles, path_to_food)  # [OBSTACLE] Truyền obstacles
         pygame.display.flip()
 
     while game_over:
