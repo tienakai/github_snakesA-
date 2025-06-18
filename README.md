@@ -6,7 +6,7 @@
   Nguyễn Ngọc Tiến <br>
   Phạm Như Mạnh <br>
   Trần Thị Khánh Linh
-+ Bài tập lớn: Snake Game (INT2215_1 - Lập trình nâng cao)
++ Bài tập lớn: Snake Game (Bài tập cuối kỳ)
 ## **Description** 
 
 ### *Game description and instruction* 
