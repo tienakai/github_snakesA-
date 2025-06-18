@@ -3,7 +3,7 @@ import random
 import heapq
 import os
 from pygame.math import Vector2
-from collections import deque
+from collections import deque, defaultdict
 
 # Initialize Pygame
 pygame.init()
@@ -12,20 +12,17 @@ pygame.mixer.init()
 # Constants
 WIDTH, HEIGHT = 700, 700
 CELL_SIZE = 35
-GRID_SIZE = WIDTH // CELL_SIZE
+GRID_SIZE = WIDTH // CELL_SIZE 
 BG_COLOR = (175, 215, 70)
 WHITE = (255, 255, 255)
 INITIAL_SPEED = 5
 MAX_SPEED = 20
+DIRECTIONS = [Vector2(0, 1), Vector2(1, 0), Vector2(0, -1), Vector2(-1, 0)]  # Precomputed directions
+MAX_BFS_DEPTH = 300  # Increased BFS depth for better exploration
 
 # Set up display and clock
 display = pygame.display.set_mode((WIDTH, HEIGHT))
 clock = pygame.time.Clock()
-pygame.display.set_caption("Snake A* Game")
-
-# Base path for assets
-BASE_PATH = os.path.dirname(__file__)
-ASSETS_PATH = os.path.join(BASE_PATH, "assets")
 
 # Load sound with error handling
 try:
@@ -79,9 +76,12 @@ score = 0
 speed = INITIAL_SPEED
 mode = None
 
+# Path caching
+path_cache = defaultdict(lambda: None)
+
 class SNAKE:
     def __init__(self):
-        self.body = [Vector2(5, 10), Vector2(4, 10), Vector2(3, 10)]
+        self.body = [Vector2(10, 10), Vector2(9, 10), Vector2(8, 10)]  # Changed starting position
         self.new_block = False
         self.load_images()
         self.head = self.head_right
@@ -89,14 +89,13 @@ class SNAKE:
 
     def load_images(self):
         try:
-            
             self.head_up = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\head_up.png").convert_alpha()
             self.head_down = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\head_down.png").convert_alpha()
             self.head_right = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\head_right.png").convert_alpha()
             self.head_left = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\head_left.png").convert_alpha()
             self.tail_up = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\tail_up.png").convert_alpha()
             self.tail_down = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\tail_down.png").convert_alpha()
-            self.tail_right =  pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\tail_right.png").convert_alpha()
+            self.tail_right = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\tail_right.png").convert_alpha()
             self.tail_left = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\tail_left.png").convert_alpha()
             self.body_vertical = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\body_vertical.png").convert_alpha()
             self.body_horizontal = pygame.image.load(r"C:\Users\Administrator\Downloads\snake_graphics\Graphics\body_horizontal.png").convert_alpha()
@@ -169,6 +168,10 @@ def generate_food(snake_body):
             return pos
 
 def astar(start, goal, snake_body):
+    cache_key = (tuple(start), tuple(goal), tuple(tuple(b) for b in snake_body))
+    if path_cache[cache_key]:
+        return path_cache[cache_key]
+
     def heuristic(a, b):
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
@@ -187,10 +190,11 @@ def astar(start, goal, snake_body):
             while current in came_from:
                 path.insert(0, Vector2(current))
                 current = came_from[current]
+            path_cache[cache_key] = path
             return path
 
-        for d in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            neighbor = (current[0] + d[0], current[1] + d[1])
+        for d in DIRECTIONS:
+            neighbor = (current[0] + d.x, current[1] + d.y)
             if (0 <= neighbor[0] < GRID_SIZE and 0 <= neighbor[1] < GRID_SIZE and neighbor not in snake_body):
                 tentative_g = g_score[current] + 1
                 if tentative_g < g_score.get(neighbor, float('inf')):
@@ -199,64 +203,138 @@ def astar(start, goal, snake_body):
                     heapq.heappush(open_set, (f, neighbor))
                     came_from[neighbor] = current
 
+    path_cache[cache_key] = None
     return None
 
-def get_safe_move(head, body):
+def bfs_survival(head, body):
     body_set = set(tuple(part) for part in body)
     tail = tuple(body[-1])
     body_set_without_tail = body_set - {tail}
-
-    path_to_tail = astar(head, tail, body_set_without_tail)
-    if path_to_tail:
-        return path_to_tail[0]
-
-    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-    max_area = -1
+    max_safety_score = -float('inf')
     best_move = None
+    valid_moves = []
 
-    for d in directions:
-        next_pos = (head[0] + d[0], head[1] + d[1])
-        if not (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE) or next_pos in body_set:
-            continue
+    # Check all possible moves
+    for d in DIRECTIONS:
+        next_pos = (head[0] + d.x, head[1] + d.y)
+        if (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE and next_pos not in body_set):
+            valid_moves.append(next_pos)
 
-        visited = set()
+    # Special handling for top-left corner
+    if len(valid_moves) > 0 and head[0] == 0 and head[1] == 0:
+        print(f"Top-left corner detected at {head}, valid moves: {valid_moves}")
+        for move in valid_moves:
+            # Check safety for next three moves
+            next_next_pos = (move[0] + (move[0] - head[0]), move[1] + (move[1] - head[1]))
+            safe = False
+            if (0 <= next_next_pos[0] < GRID_SIZE and 0 <= next_next_pos[1] < GRID_SIZE and
+                next_next_pos not in body_set):
+                for d2 in DIRECTIONS:
+                    next_next_next_pos = (next_next_pos[0] + d2.x, next_next_pos[1] + d2.y)
+                    if (0 <= next_next_next_pos[0] < GRID_SIZE and 0 <= next_next_next_pos[1] < GRID_SIZE and
+                        next_next_next_pos not in body_set):
+                        safe = True
+                        break
+            else:
+                safe = False
+
+            # Safety score: force right if possible, high penalty for unsafe
+            safety_score = 200 if move[0] > head[0] else 100  # Strong preference for right
+            safety_score += 100 if safe else -100  # High bonus for safety, penalty for unsafe
+            if safety_score > max_safety_score:
+                max_safety_score = safety_score
+                best_move = move
+        if not best_move and valid_moves:
+            # Force move right if available, otherwise first valid
+            for move in valid_moves:
+                if move[0] > head[0]:
+                    best_move = move
+                    break
+            if not best_move:
+                best_move = valid_moves[0]
+        print(f"Top-left move chosen: {best_move}, safety score: {max_safety_score}")
+        return best_move
+
+    # General corner/edge handling
+    if len(valid_moves) > 0 and (
+        (head[0] == 0 or head[0] == GRID_SIZE-1) or
+        (head[1] == 0 or head[1] == GRID_SIZE-1)
+    ):
+        print(f"Corner/edge detected at {head}, valid moves: {valid_moves}")
+        for move in valid_moves:
+            if (head[0] == 0 and move[0] > head[0]) or (head[0] == GRID_SIZE-1 and move[0] < head[0]) or \
+               (head[1] == 0 and move[1] > head[1]) or (head[1] == GRID_SIZE-1 and move[1] < head[1]):
+                best_move = move
+                break
+        if not best_move:
+            best_move = valid_moves[0]
+        print(f"Corner move chosen: {best_move}")
+        return best_move
+
+    # BFS with multi-step safety
+    center = (GRID_SIZE // 2, GRID_SIZE // 2)
+    for next_pos in valid_moves:
+        visited = set([next_pos])
         queue = deque([next_pos])
-        visited.add(next_pos)
-        max_depth = 100  # Limit depth to improve performance
         depth = 0
-
-        while queue and depth < max_depth:
+        safe = True
+        while queue and depth < MAX_BFS_DEPTH:
             current = queue.popleft()
-            for nd in directions:
-                neighbor = (current[0] + nd[0], current[1] + nd[1])
+            next_neighbors = 0
+            for nd in DIRECTIONS:
+                neighbor = (current[0] + nd.x, current[1] + nd.y)
                 if (0 <= neighbor[0] < GRID_SIZE and 0 <= neighbor[1] < GRID_SIZE
-                        and neighbor not in body_set and neighbor not in visited):
+                        and neighbor not in body_set_without_tail and neighbor not in visited):
                     visited.add(neighbor)
                     queue.append(neighbor)
+                    next_neighbors += 1
+            if next_neighbors == 0:
+                safe = False
+                break
             depth += 1
 
-        if len(visited) > max_area:
-            max_area = len(visited)
-            best_move = next_pos
-
-    return best_move
-
-def get_away_from_food(head, food, body):
-    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-    max_distance = -1
-    best_move = None
-    body_set = set(tuple(b) for b in body)
-
-    for d in directions:
-        next_pos = (head[0] + d[0], head[1] + d[1])
-        if not (0 <= next_pos[0] < GRID_SIZE and 0 <= next_pos[1] < GRID_SIZE) or next_pos in body_set:
+        if not safe:
             continue
-        distance = abs(next_pos[0] - food[0]) + abs(next_pos[1] - food[1])
-        if distance > max_distance:
-            max_distance = distance
+
+        path_to_tail = astar(next_pos, tail, body_set_without_tail)
+        safety_score = len(visited) * (1.5 if path_to_tail else 1.0) + abs(next_pos[0] - center[0]) + abs(next_pos[1] - center[1])
+        if safety_score > max_safety_score:
+            max_safety_score = safety_score
             best_move = next_pos
 
+    if not best_move and valid_moves:
+        best_move = random.choice(valid_moves)
+        print(f"Random safe move chosen: {best_move}, safety score: {max_safety_score}")
+
+    if best_move:
+        print(f"Survival move chosen: {best_move}, safety score: {max_safety_score}")
+    else:
+        print(f"No survival move found, valid moves: {valid_moves}")
     return best_move
+
+def tail_chasing_fallback(head, body):
+    tail = tuple(body[-1])
+    body_set_without_tail = set(tuple(part) for part in body) - {tail}
+    path_to_tail = astar(head, tail, body_set_without_tail)
+    if path_to_tail:
+        print(f"Tail-chasing move: {path_to_tail[0]}")
+        return path_to_tail[0]
+
+    # Fallback: choose any valid move
+    body_set = set(tuple(part) for part in body)
+    valid_moves = [
+        (head[0] + d.x, head[1] + d.y)
+        for d in DIRECTIONS
+        if (0 <= head[0] + d.x < GRID_SIZE and
+            0 <= head[1] + d.y < GRID_SIZE and
+            (head[0] + d.x, head[1] + d.y) not in body_set)
+    ]
+    if valid_moves:
+        move = random.choice(valid_moves)
+        print(f"Fallback move: {move}")
+        return move
+    print("No fallback move found")
+    return None
 
 def draw_score():
     text = score_font.render(f"Score: {score}", True, (0, 0, 0))
@@ -270,12 +348,12 @@ def draw_game(snake, food, path_to_food=None):
     for i in range(GRID_SIZE + 1):
         pygame.draw.line(display, WHITE, (0, CELL_SIZE * i), (WIDTH, CELL_SIZE * i))
         pygame.draw.line(display, WHITE, (CELL_SIZE * i, 0), (CELL_SIZE * i, HEIGHT))
-    if path_to_food and mode == 'bot': # Hiển thị đường đi của rắn đến thức ăn
+    if path_to_food and mode == 'bot':
         for step in path_to_food:
-            pygame.draw.rect(display, (100, 100, 255), (step[0] * CELL_SIZE, step[1] * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+            pygame.draw.rect(display, (255, 255, 0), (step[0] * CELL_SIZE, step[1] * CELL_SIZE, CELL_SIZE, CELL_SIZE))
     display.blit(food_img, (int(food.x * CELL_SIZE), int(food.y * CELL_SIZE)))
     snake.draw_snake()
-    draw_score()
+#   draw_score()
     draw_pause_button()
 
 def show_start_screen():
@@ -300,13 +378,10 @@ def show_start_screen():
 
 def show_end_screen():
     display.fill(BG_COLOR)
-    # Render "END" text
     end_text = title_font.render("END", True, (200, 0, 0))
     display.blit(end_text, (WIDTH // 2 - end_text.get_width() // 2, HEIGHT // 2 - 100))
-    # Render score
     score_text = score_font.render(f"Score: {score}", True, (0, 0, 0))
     display.blit(score_text, (WIDTH // 2 - score_text.get_width() // 2, HEIGHT // 2 - 50))
-    # Render prompt
     prompt = menu_font.render("Press Q to Quit or R to Reset", True, (0, 0, 0))
     button_pos = (WIDTH // 2 - end_button_img.get_width() // 2, HEIGHT // 2 + 20)
     display.blit(end_button_img, button_pos)
@@ -323,6 +398,8 @@ while True:
     snake = SNAKE()
     food = generate_food(snake.body)
     score = 0
+    path_cache.clear()
+    pygame.display.set_caption(f"Snake A* Game - Score: {score}")  # Initialize title with score
 
     while mode is None:
         show_start_screen()
@@ -372,9 +449,9 @@ while True:
                         pending_direction = Vector2(-1, 0)
                     elif event.key == pygame.K_RIGHT and direction != Vector2(-1, 0):
                         pending_direction = Vector2(1, 0)
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if pause_rect.collidepoint(event.pos):
-                        is_paused = True
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        if pause_rect.collidepoint(event.pos):
+                         is_paused = True
         else:  # Bot mode
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -394,24 +471,26 @@ while True:
                 new_head = path_to_food[0]
                 direction = Vector2(new_head) - snake.body[0]
             else:
-                safe_move = get_safe_move(head, snake.body)
+                safe_move = bfs_survival(head, snake.body)
                 if safe_move:
                     new_head = Vector2(safe_move)
                     direction = Vector2(new_head) - snake.body[0]
                 else:
-                    retreat = get_away_from_food(head, food, snake.body)
-                    if retreat:
-                        new_head = Vector2(retreat)
-                        direction = new_head - snake.body[0]
+                    tail_move = tail_chasing_fallback(head, snake.body)
+                    if tail_move:
+                        new_head = Vector2(tail_move)
+                        direction = Vector2(new_head) - snake.body[0]
                     else:
                         game_over = True
                         running = False
+
         else:
             direction = pending_direction
             new_head = snake.body[0] + direction
 
         if new_head:
-            if not (0 <= new_head.x < GRID_SIZE and 0 <= new_head.y < GRID_SIZE) or tuple(new_head) in body_set:
+            if (new_head.x < 0 or new_head.x >= GRID_SIZE or new_head.y < 0 or new_head.y >= GRID_SIZE or
+                new_head in snake.body[1:]):
                 game_over = True
                 running = False
             else:
@@ -421,6 +500,8 @@ while True:
                     score += 1
                     eat_sound.play()
                     speed = min(speed + 0.5, MAX_SPEED)
+                    path_cache.clear()
+                    pygame.display.set_caption(f"Snake A* Game - Score: {score}")  # Update title with new score
                 snake.move(Vector2(new_head))
                 if len(snake.body) != len(set(tuple(b) for b in snake.body)):
                     game_over = True
